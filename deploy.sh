@@ -15,7 +15,8 @@ log "=== Deploy started ==="
 cd "$APP_DIR"
 
 log "Pulling from GitHub…"
-git pull origin main
+git fetch origin main
+git reset --hard origin/main
 
 log "Installing dependencies…"
 npm install --include=dev
