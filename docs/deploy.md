@@ -10,14 +10,14 @@ PostgreSQL and the Node app run on the same server. Nginx sits in front on ports
 2. **Platform**: Linux/Unix. **Blueprint**: OS Only → **Ubuntu 22.04 LTS**.
 3. **Plan**: $10/month (2 GB RAM) minimum.
 4. Create or attach a key pair; download the `.pem` file.
-5. **Instance name**: `autoscore`.
+5. **Instance name**: `autoscoreapp`.
 6. Click **Create instance** and wait ~60 seconds.
 
 ---
 
 ## 2. Attach a static IP
 
-Lightsail → **Networking** → **Create static IP** → attach to `autoscore`. Note the IP (called `YOUR_IP` below).
+Lightsail → **Networking** → **Create static IP** → attach to `autoscoreapp`. Note the IP (called `YOUR_IP` below).
 
 ---
 
@@ -180,6 +180,32 @@ psql postgresql://autoscore:YOURPASSWORD@localhost:5432/autoscore \
 ```
 
 You should see `CREATE TABLE`, `CREATE INDEX`, `CREATE TRIGGER` with no errors.
+
+---
+
+## 17b. Import Firebase data (optional)
+
+If you want to load the historical data from the original Firebase app:
+
+```bash
+DATABASE_URL=postgresql://autoscore:YOURPASSWORD@localhost:5432/autoscore \
+  node scripts/import-firebase.js
+```
+
+Expected output:
+```
+Inserting 3 events…
+  eventMap: 3 entries
+Inserting 53 cars…
+  carMap: 53 entries, skipped: 0
+Inserting 12 judges…
+  judgeMap: 12 entries, skipped: 0
+Inserting ~170 scores…
+  inserted/updated: ~167, skipped: 3
+Import complete.
+```
+
+(3 scores are skipped because they reference a car that no longer exists in the source data.)
 
 ---
 
