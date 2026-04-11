@@ -60,17 +60,26 @@ CREATE INDEX IF NOT EXISTS scores_car_id_idx    ON scores(car_id);
 
 CREATE OR REPLACE FUNCTION autoscore_notify_change()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  rec       json;
+  event_id_val text;
 BEGIN
+  rec := row_to_json(COALESCE(NEW, OLD));
+
+  -- events rows have no event_id column; use id instead
+  IF TG_TABLE_NAME = 'events' THEN
+    event_id_val := rec->>'id';
+  ELSE
+    event_id_val := rec->>'event_id';
+  END IF;
+
   PERFORM pg_notify(
     'autoscore_changes',
     json_build_object(
       'table',    TG_TABLE_NAME,
       'action',   TG_OP,
-      'id',       COALESCE(NEW.id, OLD.id)::text,
-      'event_id', COALESCE(
-                    COALESCE(NEW.event_id, OLD.event_id)::text,
-                    NULL
-                  )
+      'id',       rec->>'id',
+      'event_id', event_id_val
     )::text
   );
   RETURN COALESCE(NEW, OLD);
