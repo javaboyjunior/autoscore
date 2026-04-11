@@ -18,7 +18,7 @@ log "Pulling from GitHub…"
 git pull origin main
 
 log "Installing dependencies…"
-npm install
+npm install --include=dev
 
 log "Building frontend…"
 npm run build
