@@ -239,12 +239,12 @@ Create the initial HTTP-only config:
 sudo nano /etc/nginx/sites-available/autoscore
 ```
 
-Paste (replace YOUR_DOMAIN):
+Paste (replace calvaryagkc.app):
 ```nginx
 server {
     listen 80;
     listen [::]:80;
-    server_name YOUR_DOMAIN www.YOUR_DOMAIN;
+    server_name calvaryagkc.app www.calvaryagkc.app;
 
     location /.well-known/acme-challenge/ {
         root /var/www/html;
@@ -275,14 +275,14 @@ sudo nginx -t && sudo systemctl reload nginx
 ## 20. Set up SSL with Certbot
 
 ```bash
-dig YOUR_DOMAIN +short   # must return YOUR_IP first
+dig calvaryagkc.app +short   # must return YOUR_IP first
 
-sudo certbot --nginx -d YOUR_DOMAIN -d www.YOUR_DOMAIN
+sudo certbot --nginx -d calvaryagkc.app -d www.calvaryagkc.app
 ```
 
 Then install the final nginx config (adds `proxy_buffering off` for SSE):
 ```bash
-# Edit nginx.conf in the repo — replace YOUR_DOMAIN with your actual domain
+# Edit nginx.conf in the repo — replace calvaryagkc.app with your actual domain
 sudo cp /home/ubuntu/autoscore/nginx.conf /etc/nginx/sites-available/autoscore
 sudo nginx -t && sudo systemctl reload nginx
 ```
@@ -300,7 +300,7 @@ On GitHub → your repo → **Settings** → **Webhooks** → **Add webhook**:
 
 | Field | Value |
 |---|---|
-| Payload URL | `https://YOUR_DOMAIN/hooks/deploy` |
+| Payload URL | `https://calvaryagkc.app/hooks/deploy` |
 | Content type | `application/json` |
 | Secret | value of `GITHUB_SECRET` from `.env` |
 | Which events | **Just the push event** |
