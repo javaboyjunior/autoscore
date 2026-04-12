@@ -10,6 +10,9 @@ const path       = require('path');
 
 const app = express();
 
+// Don't advertise the framework
+app.disable('x-powered-by');
+
 // Nginx sits in front
 app.set('trust proxy', 1);
 
@@ -82,6 +85,14 @@ const writeLimiter = rateLimit({
   standardHeaders: true, legacyHeaders: false,
   keyGenerator: (req) => req.ip || '127.0.0.1',
   handler: (_req, res) => res.status(429).json({ error: 'Too many requests' }),
+});
+
+// Strict limiter for auth — 10 attempts per 15 minutes per IP
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 10,
+  standardHeaders: true, legacyHeaders: false,
+  keyGenerator: (req) => req.ip || '127.0.0.1',
+  handler: (_req, res) => res.status(429).json({ error: 'Too many login attempts — try again later' }),
 });
 
 // ── SSE — real-time change stream ───────────────────────────────────────────
@@ -430,12 +441,19 @@ app.put('/api/scores/:id', writeLimiter, async (req, res) => {
 // They reset on server restart — acceptable for a show-day app.
 const adminTokens = new Map(); // token -> expiresAt (ms)
 
-app.post('/api/admin/login', (req, res) => {
+// Timing-safe string compare — prevents timing attacks on credential checks
+function safeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
+
+app.post('/api/admin/login', authLimiter, (req, res) => {
   const { username, password } = req.body || {};
   if (
     process.env.ADMIN_USERNAME &&
-    username === process.env.ADMIN_USERNAME &&
-    password === process.env.ADMIN_PASSWORD
+    safeEqual(username, process.env.ADMIN_USERNAME) &&
+    safeEqual(password, process.env.ADMIN_PASSWORD)
   ) {
     const token = crypto.randomBytes(32).toString('hex');
     adminTokens.set(token, Date.now() + 24 * 60 * 60 * 1000);
