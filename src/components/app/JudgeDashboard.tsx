@@ -13,9 +13,20 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { ScoringDialog } from './ScoringDialog';
-import { CheckCircle2, LogOut, Star, Loader2 } from 'lucide-react';
+import { CheckCircle2, LogOut, Star, Loader2, WifiOff, Lock } from 'lucide-react';
 
-type Event = { id: string; name: string; date: string; isCurrent?: boolean };
+// ── Offline queue helpers ─────────────────────────────────────────────────────
+const QUEUE_KEY = 'autoscore_offline_queue';
+interface QueuedScore {
+  queueId: string; carId: string; judgeId: string; eventId: string;
+  score: number; notes: string; existingScoreId?: string;
+}
+function loadQueue(): QueuedScore[] {
+  try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); } catch { return []; }
+}
+function saveQueue(q: QueuedScore[]) { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); }
+
+type Event = { id: string; name: string; date: string; isCurrent?: boolean; scoringLocked?: boolean };
 type Car = { id: string; eventId: string; registrationId: number; ownerInfo: string; make: string; model: string; year: number; color: string };
 type Judge = { id: string; eventId: string; name: string; email: string; password?: string };
 type Score = { id: string; carId: string; judgeId: string; eventId: string; score: number | null; notes: string };
@@ -31,6 +42,8 @@ export default function JudgeDashboard() {
   const [scoringCar, setScoringCar] = useState<CarWithScore | null>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [offlineQueue, setOfflineQueue] = useState<QueuedScore[]>(loadQueue);
 
   // ── Data fetching ─────────────────────────────────────────────────────────
   const { data: events, isLoading: isLoadingEvents } = useCollection<Event>(
@@ -72,6 +85,37 @@ export default function JudgeDashboard() {
       setTimeout(() => passwordRef.current?.focus(), 100);
     }
   }, [isLoginDialogOpen]);
+
+  // Online/offline detection + queue flush on reconnect
+  useEffect(() => {
+    const goOnline  = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener('online',  goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => { window.removeEventListener('online', goOnline); window.removeEventListener('offline', goOffline); };
+  }, []);
+
+  useEffect(() => {
+    if (!isOnline) return;
+    const q = loadQueue();
+    if (!q.length) return;
+
+    (async () => {
+      const failed: QueuedScore[] = [];
+      for (const item of q) {
+        const { queueId, existingScoreId, ...scoreData } = item;
+        try {
+          if (existingScoreId) await api.putAwait(`/api/scores/${existingScoreId}`, scoreData);
+          else                 await api.postAwait('/api/scores', scoreData);
+        } catch { failed.push(item); }
+      }
+      setOfflineQueue(failed);
+      saveQueue(failed);
+      if (failed.length < q.length) {
+        toast({ title: 'Scores synced', description: `${q.length - failed.length} offline score${q.length - failed.length !== 1 ? 's' : ''} submitted.` });
+      }
+    })();
+  }, [isOnline]);
 
   // ── Derived data ─────────────────────────────────────────────────────────
   const carsForScoring: CarWithScore[] = useMemo(() => {
@@ -133,24 +177,60 @@ export default function JudgeDashboard() {
     if (!selectedEventId) return;
     const existing = judgeScores?.find((s) => s.carId === carId && s.judgeId === judgeId);
     const scoreData = { carId, judgeId, eventId: selectedEventId, score: newScore, notes: newNotes };
-    try {
-      if (existing) {
-        await api.putAwait(`/api/scores/${existing.id}`, scoreData);
-      } else {
-        await api.postAwait('/api/scores', scoreData);
-      }
-      toast({ title: 'Score Saved', description: 'Your score for the vehicle has been recorded.' });
+
+    if (!navigator.onLine) {
+      const entry: QueuedScore = { ...scoreData, queueId: crypto.randomUUID(), existingScoreId: existing?.id };
+      setOfflineQueue((prev) => {
+        const filtered = prev.filter((q) => !(q.carId === carId && q.judgeId === judgeId));
+        const next = [...filtered, entry];
+        saveQueue(next);
+        return next;
+      });
+      toast({ title: 'Saved offline', description: 'Will sync automatically when connection returns.' });
       setScoringCar(null);
-    } catch {
-      toast({ variant: 'destructive', title: 'Save Failed', description: 'Could not save your score.' });
+      return;
+    }
+
+    try {
+      if (existing) await api.putAwait(`/api/scores/${existing.id}`, scoreData);
+      else          await api.postAwait('/api/scores', scoreData);
+      toast({ title: 'Score Saved', description: 'Your score has been recorded.' });
+      setScoringCar(null);
+    } catch (err: any) {
+      if (err?.status === 423) {
+        toast({ variant: 'destructive', title: 'Scoring Locked', description: 'The organiser has locked scoring for this event.' });
+      } else {
+        // Network hiccup — queue it
+        const entry: QueuedScore = { ...scoreData, queueId: crypto.randomUUID(), existingScoreId: existing?.id };
+        setOfflineQueue((prev) => {
+          const filtered = prev.filter((q) => !(q.carId === carId && q.judgeId === judgeId));
+          const next = [...filtered, entry];
+          saveQueue(next);
+          return next;
+        });
+        toast({ title: 'Saved offline', description: 'Will retry automatically.' });
+        setScoringCar(null);
+      }
     }
   };
 
   const isLoading = isLoadingEvents || isLoadingJudges || isLoadingCars || isLoadingScores;
+  const selectedEvent = events?.find((e) => e.id === selectedEventId);
+  const isLocked = selectedEvent?.scoringLocked ?? false;
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-background">
+      {/* Offline banner */}
+      {(!isOnline || offlineQueue.length > 0) && (
+        <div className={`flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium ${!isOnline ? 'bg-yellow-500/15 text-yellow-600 dark:text-yellow-400' : 'bg-blue-500/15 text-blue-600 dark:text-blue-400'}`}>
+          <WifiOff className="h-4 w-4 shrink-0" />
+          {!isOnline
+            ? `You're offline. ${offlineQueue.length > 0 ? `${offlineQueue.length} score${offlineQueue.length !== 1 ? 's' : ''} queued — will sync on reconnect.` : 'Scores will be queued until you reconnect.'}`
+            : `${offlineQueue.length} score${offlineQueue.length !== 1 ? 's' : ''} syncing…`}
+        </div>
+      )}
+
       <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background/80 backdrop-blur-sm px-4 md:px-6">
         <h1 className="text-xl font-bold font-headline text-primary">
           <Link to="/">AutoScore Live</Link>
@@ -197,6 +277,14 @@ export default function JudgeDashboard() {
         {isLoading && (
           <div className="flex justify-center items-center h-64">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        )}
+
+        {/* Scoring locked banner */}
+        {!isLoading && loggedInJudge && isLocked && (
+          <div className="flex items-center gap-2 px-4 py-3 mb-4 rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm font-medium">
+            <Lock className="h-4 w-4 shrink-0" />
+            Scoring is closed for this event. Your submitted scores have been recorded.
           </div>
         )}
 
@@ -250,8 +338,9 @@ export default function JudgeDashboard() {
                         className="w-full"
                         variant={car.score ? 'secondary' : 'default'}
                         onClick={() => setScoringCar(car)}
+                        disabled={isLocked}
                       >
-                        {car.score ? 'Edit Score' : 'Score Car'}
+                        {isLocked ? <><Lock className="mr-2 h-3 w-3" />Locked</> : car.score ? 'Edit Score' : 'Score Car'}
                       </Button>
                     </CardFooter>
                   </Card>

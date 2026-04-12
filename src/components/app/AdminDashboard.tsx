@@ -28,11 +28,11 @@ import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import {
   PlusCircle, Edit, Users, Car as CarIcon, ListChecks, CheckCircle2,
-  XCircle, Calendar, Star, Loader2, Trophy, Download, Upload, LogOut,
+  XCircle, Calendar, Star, Loader2, Trophy, Download, Upload, LogOut, Lock, LockOpen,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 
-type Event = { id: string; name: string; date: string; isCurrent?: boolean };
+type Event = { id: string; name: string; date: string; isCurrent?: boolean; scoringLocked?: boolean };
 type Car = {
   id: string; eventId: string; registrationId: number; ownerInfo: string;
   make: string; model: string; year: number; color: string;
@@ -195,6 +195,22 @@ export default function AdminDashboard({ onLogout }: { onLogout?: () => void }) 
       });
     } catch {
       toast({ variant: 'destructive', title: 'Error', description: 'Could not set the current event.' });
+    }
+  };
+
+  const handleToggleLock = async (eventId: string, currentlyLocked: boolean) => {
+    try {
+      await fetch(`/api/events/${eventId}/lock`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ locked: !currentlyLocked }),
+      });
+      toast({
+        title: currentlyLocked ? 'Scoring Unlocked' : 'Scoring Locked',
+        description: currentlyLocked ? 'Judges can submit scores again.' : 'No more scores can be submitted.',
+      });
+    } catch {
+      toast({ variant: 'destructive', title: 'Error', description: 'Could not change lock state.' });
     }
   };
 
@@ -489,7 +505,10 @@ export default function AdminDashboard({ onLogout }: { onLogout?: () => void }) 
                           <TableCell>{ev.name}</TableCell>
                           <TableCell>{format(parseISO(ev.date), 'PPP')}</TableCell>
                           <TableCell className="text-center">
-                            {ev.isCurrent && <Badge><Star className="mr-1 h-3 w-3" />Current</Badge>}
+                            <div className="flex items-center justify-center gap-2">
+                              {ev.isCurrent && <Badge><Star className="mr-1 h-3 w-3" />Current</Badge>}
+                              {ev.scoringLocked && <Badge variant="destructive"><Lock className="mr-1 h-3 w-3" />Locked</Badge>}
+                            </div>
                           </TableCell>
                           <TableCell className="text-right space-x-2">
                             <Button
@@ -499,6 +518,15 @@ export default function AdminDashboard({ onLogout }: { onLogout?: () => void }) 
                               disabled={ev.isCurrent}
                             >
                               Set as Current
+                            </Button>
+                            <Button
+                              variant={ev.scoringLocked ? 'outline' : 'secondary'}
+                              size="sm"
+                              onClick={() => handleToggleLock(ev.id, !!ev.scoringLocked)}
+                            >
+                              {ev.scoringLocked
+                                ? <><LockOpen className="mr-1 h-3 w-3" />Unlock</>
+                                : <><Lock className="mr-1 h-3 w-3" />Lock Scoring</>}
                             </Button>
                             <AlertDialog>
                               <AlertDialogTrigger asChild>

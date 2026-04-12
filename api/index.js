@@ -172,7 +172,7 @@ app.get('/api/stream', (req, res) => {
 app.get('/api/events', readLimiter, async (_req, res) => {
   try {
     const { rows } = await pool.query(
-      'SELECT id, name, date, is_current AS "isCurrent" FROM events ORDER BY date DESC',
+      'SELECT id, name, date, is_current AS "isCurrent", scoring_locked AS "scoringLocked" FROM events ORDER BY date DESC',
     );
     res.json(rows);
   } catch (err) {
@@ -214,6 +214,24 @@ app.put('/api/events/:id/set-current', writeLimiter, async (req, res) => {
   } catch (err) {
     await pool.query('ROLLBACK').catch(() => {});
     console.error('[PUT /api/events/:id/set-current]', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// PUT /api/events/:id/lock — lock or unlock scoring
+app.put('/api/events/:id/lock', writeLimiter, async (req, res) => {
+  const { locked } = req.body;
+  if (typeof locked !== 'boolean') return res.status(400).json({ error: 'locked (boolean) required' });
+  try {
+    const { rows } = await pool.query(
+      `UPDATE events SET scoring_locked = $1 WHERE id = $2
+       RETURNING id, name, date, is_current AS "isCurrent", scoring_locked AS "scoringLocked"`,
+      [locked, req.params.id],
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('[PUT /api/events/:id/lock]', err.message);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -400,6 +418,10 @@ app.post('/api/scores', writeLimiter, async (req, res) => {
     if (!carId || !judgeId || !eventId || score === undefined) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
+    const lockCheck = await pool.query('SELECT scoring_locked FROM events WHERE id = $1', [eventId]);
+    if (lockCheck.rows[0]?.scoring_locked) {
+      return res.status(423).json({ error: 'Scoring is locked for this event' });
+    }
     // Upsert — one score per judge per car
     const { rows } = await pool.query(
       `INSERT INTO scores (car_id, judge_id, event_id, score, notes)
@@ -420,6 +442,10 @@ app.post('/api/scores', writeLimiter, async (req, res) => {
 app.put('/api/scores/:id', writeLimiter, async (req, res) => {
   try {
     const { score, notes, carId, judgeId, eventId } = req.body;
+    const lockCheck = await pool.query('SELECT scoring_locked FROM events WHERE id = $1', [eventId]);
+    if (lockCheck.rows[0]?.scoring_locked) {
+      return res.status(423).json({ error: 'Scoring is locked for this event' });
+    }
     const { rows } = await pool.query(
       `UPDATE scores SET score = $1, notes = $2, car_id = $3, judge_id = $4,
               event_id = $5, updated_at = NOW()
