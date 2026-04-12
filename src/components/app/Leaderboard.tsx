@@ -22,7 +22,7 @@ export default function Leaderboard() {
   const [searchParams] = useSearchParams();
   const [selectedEventId, setSelectedEventId] = useState('');
   const [isExporting, setIsExporting] = useState(false);
-  const [showAll, setShowAll] = useState(false);
+  const [showAll, setShowAll] = useState(true);
 
   const { data: events, isLoading: isLoadingEvents } = useCollection<Event>(
     '/api/events',

@@ -2,18 +2,21 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useCollection } from '@/lib/api';
 import { format, parseISO } from 'date-fns';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 
 type Event  = { id: string; name: string; date: string; isCurrent?: boolean; scoringLocked?: boolean };
 type Car    = { id: string; registrationId: number; ownerInfo: string; make: string; model: string; year: number };
 type Judge  = { id: string };
 type Score  = { id: string; carId: string; judgeId: string; score: number | null };
-type RankedCar = Car & { rank: number; totalScore: number };
+type RankedCar = Car & { rank: number; totalScore: number; isComplete: boolean };
 
 const MEDALS = ['🥇', '🥈', '🥉'];
 
 export default function PublicLeaderboard() {
   const { eventId: paramEventId } = useParams<{ eventId?: string }>();
   const [selectedEventId, setSelectedEventId] = useState(paramEventId || '');
+  const [showPartial, setShowPartial] = useState(true);
 
   const { data: events } = useCollection<Event>('/api/events', { watchTables: ['events'] });
 
@@ -37,22 +40,24 @@ export default function PublicLeaderboard() {
     const totalJudges = judges?.length || 0;
     if (!cars || totalJudges === 0) return [];
 
-    const completed = cars
+    const eligible = cars
       .map((car) => {
         const carScores = scores?.filter((s) => s.carId === car.id && s.score !== null) || [];
         const scoredJudges = new Set(carScores.map((s) => s.judgeId)).size;
-        if (scoredJudges < totalJudges) return null;
-        return { ...car, totalScore: carScores.reduce((acc, s) => acc + (s.score || 0), 0) };
+        if (scoredJudges === 0) return null;
+        const isComplete = scoredJudges === totalJudges;
+        if (!showPartial && !isComplete) return null;
+        return { ...car, totalScore: carScores.reduce((acc, s) => acc + (s.score || 0), 0), isComplete };
       })
       .filter((c): c is NonNullable<typeof c> => c !== null)
       .sort((a, b) => b.totalScore - a.totalScore);
 
     let rank = 1;
-    return completed.map((car, i) => {
-      if (i > 0 && completed[i - 1].totalScore > car.totalScore) rank = i + 1;
+    return eligible.map((car, i) => {
+      if (i > 0 && eligible[i - 1].totalScore > car.totalScore) rank = i + 1;
       return { ...car, rank };
     });
-  }, [cars, judges, scores]);
+  }, [cars, judges, scores, showPartial]);
 
   const isLocked = selectedEvent?.scoringLocked ?? false;
 
@@ -93,6 +98,13 @@ export default function PublicLeaderboard() {
             {format(parseISO(selectedEvent.date), 'MMMM d, yyyy')}
           </p>
         )}
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', marginTop: '1rem' }}>
+          <Switch id="show-partial" checked={showPartial} onCheckedChange={setShowPartial} />
+          <Label htmlFor="show-partial" style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.85rem', cursor: 'pointer' }}>
+            Show partial scores
+          </Label>
+        </div>
       </div>
 
       {/* Table */}
@@ -106,8 +118,9 @@ export default function PublicLeaderboard() {
               padding: '1rem 1.5rem',
               marginBottom: '0.6rem',
               borderRadius: '0.75rem',
-              background: i === 0 ? 'rgba(234,179,8,0.08)' : 'rgba(255,255,255,0.04)',
-              border: `1px solid ${i === 0 ? 'rgba(234,179,8,0.25)' : 'rgba(255,255,255,0.07)'}`,
+              background: i === 0 && car.isComplete ? 'rgba(234,179,8,0.08)' : 'rgba(255,255,255,0.04)',
+              border: `1px solid ${i === 0 && car.isComplete ? 'rgba(234,179,8,0.25)' : 'rgba(255,255,255,0.07)'}`,
+              opacity: car.isComplete ? 1 : 0.5,
             }}>
               {/* Rank */}
               <div style={{
