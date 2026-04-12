@@ -366,7 +366,7 @@ app.get('/api/scores', readLimiter, async (req, res) => {
     if (!eventId) return res.status(400).json({ error: 'eventId is required' });
 
     let query = `SELECT id, car_id AS "carId", judge_id AS "judgeId",
-                        event_id AS "eventId", score, notes
+                        event_id AS "eventId", score::float AS score, notes
                  FROM scores WHERE event_id = $1`;
     const params = [eventId];
 
@@ -396,7 +396,7 @@ app.post('/api/scores', writeLimiter, async (req, res) => {
        ON CONFLICT (car_id, judge_id) DO UPDATE
          SET score = EXCLUDED.score, notes = EXCLUDED.notes, updated_at = NOW()
        RETURNING id, car_id AS "carId", judge_id AS "judgeId",
-                 event_id AS "eventId", score, notes`,
+                 event_id AS "eventId", score::float AS score, notes`,
       [carId, judgeId, eventId, score, notes || ''],
     );
     res.status(201).json(rows[0]);
@@ -414,7 +414,7 @@ app.put('/api/scores/:id', writeLimiter, async (req, res) => {
               event_id = $5, updated_at = NOW()
        WHERE id = $6
        RETURNING id, car_id AS "carId", judge_id AS "judgeId",
-                 event_id AS "eventId", score, notes`,
+                 event_id AS "eventId", score::float AS score, notes`,
       [score, notes || '', carId, judgeId, eventId, req.params.id],
     );
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
