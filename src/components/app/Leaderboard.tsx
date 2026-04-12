@@ -5,7 +5,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { Loader2, Download, Trophy } from 'lucide-react';
+import { Loader2, Download, Trophy, ListChecks, Car as CarIcon, Users, Calendar } from 'lucide-react';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
@@ -120,6 +121,26 @@ export default function Leaderboard() {
       </header>
 
       <main className="p-4 md:p-6">
+        <Tabs value="leaderboard" className="mb-6">
+          <TabsList className="grid w-full grid-cols-5">
+            <TabsTrigger value="overview" asChild>
+              <Link to={`/admin?tab=overview&eventId=${selectedEventId}`}><ListChecks className="mr-2 h-4 w-4" />Overview</Link>
+            </TabsTrigger>
+            <TabsTrigger value="cars" asChild>
+              <Link to={`/admin?tab=cars&eventId=${selectedEventId}`}><CarIcon className="mr-2 h-4 w-4" />Cars</Link>
+            </TabsTrigger>
+            <TabsTrigger value="judges" asChild>
+              <Link to={`/admin?tab=judges&eventId=${selectedEventId}`}><Users className="mr-2 h-4 w-4" />Judges</Link>
+            </TabsTrigger>
+            <TabsTrigger value="leaderboard" asChild>
+              <Link to={`/admin/leaderboard?eventId=${selectedEventId}`}><Trophy className="mr-2 h-4 w-4" />Leaderboard</Link>
+            </TabsTrigger>
+            <TabsTrigger value="events" asChild>
+              <Link to={`/admin?tab=events&eventId=${selectedEventId}`}><Calendar className="mr-2 h-4 w-4" />Events</Link>
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+
         {isLoading ? (
           <div className="flex justify-center items-center h-64">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
