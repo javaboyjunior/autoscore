@@ -231,46 +231,62 @@ export default function JudgeDashboard() {
         </div>
       )}
 
-      <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background/80 backdrop-blur-sm px-4 md:px-6">
-        <h1 className="text-xl font-bold font-headline text-primary">
-          <Link to="/">AutoScore Live</Link>
-        </h1>
-        <div className="ml-auto flex items-center gap-4">
-          {loggedInJudge ? (
-            <>
-              <span className="font-semibold">Welcome, {loggedInJudge.name}</span>
-              <Button variant="ghost" size="icon" onClick={handleLogout}><LogOut className="h-4 w-4" /></Button>
-            </>
-          ) : (
-            <>
-              {currentEvent ? (
-                <div className="flex items-center gap-2 text-sm font-medium border rounded-lg px-3 py-2 bg-muted">
-                  <Star className="h-4 w-4 text-accent" />
-                  <span>{currentEvent.name}</span>
-                </div>
-              ) : (
-                events && (
-                  <Select value={selectedEventId} onValueChange={handleEventChange}>
-                    <SelectTrigger className="w-[200px]"><SelectValue placeholder="Select an event" /></SelectTrigger>
-                    <SelectContent>
-                      {events.map((ev) => <SelectItem key={ev.id} value={ev.id}>{ev.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                )
-              )}
-              <div className="w-full max-w-[200px]">
-                {eventJudges && (
-                  <Select value={selectedJudgeId} onValueChange={handleJudgeSelection} disabled={!selectedEventId}>
-                    <SelectTrigger><SelectValue placeholder="Select Your Name" /></SelectTrigger>
-                    <SelectContent>
-                      {eventJudges.map((j) => <SelectItem key={j.id} value={j.id}>{j.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+      <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur-sm px-4 md:px-6">
+        {/* Main header row */}
+        <div className="flex h-16 items-center gap-4">
+          <h1 className="text-xl font-bold font-headline text-primary">
+            <Link to="/">AutoScore Live</Link>
+          </h1>
+          <div className="ml-auto flex items-center gap-4">
+            {loggedInJudge ? (
+              <>
+                <span className="font-semibold">Welcome, {loggedInJudge.name}</span>
+                <Button variant="ghost" size="icon" onClick={handleLogout}><LogOut className="h-4 w-4" /></Button>
+              </>
+            ) : (
+              <>
+                {currentEvent ? (
+                  <div className="flex items-center gap-2 text-sm font-medium border rounded-lg px-3 py-2 bg-muted">
+                    <Star className="h-4 w-4 text-accent" />
+                    <span>{currentEvent.name}</span>
+                  </div>
+                ) : (
+                  events && (
+                    <Select value={selectedEventId} onValueChange={handleEventChange}>
+                      <SelectTrigger className="w-[200px]"><SelectValue placeholder="Select an event" /></SelectTrigger>
+                      <SelectContent>
+                        {events.map((ev) => <SelectItem key={ev.id} value={ev.id}>{ev.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  )
                 )}
-              </div>
-            </>
-          )}
+                {/* Judge select — desktop only, mobile gets its own row below */}
+                {eventJudges && (
+                  <div className="hidden md:block w-[200px]">
+                    <Select value={selectedJudgeId} onValueChange={handleJudgeSelection} disabled={!selectedEventId}>
+                      <SelectTrigger><SelectValue placeholder="Select Your Name" /></SelectTrigger>
+                      <SelectContent>
+                        {eventJudges.map((j) => <SelectItem key={j.id} value={j.id}>{j.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
+
+        {/* Judge select second row — mobile only */}
+        {!loggedInJudge && eventJudges && (
+          <div className="pb-3 md:hidden">
+            <Select value={selectedJudgeId} onValueChange={handleJudgeSelection} disabled={!selectedEventId}>
+              <SelectTrigger className="w-full"><SelectValue placeholder="Select Your Name" /></SelectTrigger>
+              <SelectContent>
+                {eventJudges.map((j) => <SelectItem key={j.id} value={j.id}>{j.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </header>
 
       <main className="p-4 md:p-6">
