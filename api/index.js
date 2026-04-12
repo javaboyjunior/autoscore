@@ -425,6 +425,33 @@ app.put('/api/scores/:id', writeLimiter, async (req, res) => {
   }
 });
 
+// ── Admin auth ───────────────────────────────────────────────────────────────
+// Tokens are stored in memory (Map) with a 24-hour TTL.
+// They reset on server restart — acceptable for a show-day app.
+const adminTokens = new Map(); // token -> expiresAt (ms)
+
+app.post('/api/admin/login', (req, res) => {
+  const { username, password } = req.body || {};
+  if (
+    process.env.ADMIN_USERNAME &&
+    username === process.env.ADMIN_USERNAME &&
+    password === process.env.ADMIN_PASSWORD
+  ) {
+    const token = crypto.randomBytes(32).toString('hex');
+    adminTokens.set(token, Date.now() + 24 * 60 * 60 * 1000);
+    return res.json({ token });
+  }
+  res.status(401).json({ error: 'Invalid credentials' });
+});
+
+app.get('/api/admin/verify', (req, res) => {
+  const token = (req.headers.authorization || '').replace('Bearer ', '');
+  const expiry = token && adminTokens.get(token);
+  if (expiry && expiry > Date.now()) return res.json({ ok: true });
+  if (token) adminTokens.delete(token);
+  res.status(401).json({ ok: false });
+});
+
 // ── Backup health check ──────────────────────────────────────────────────────
 // GET /api/health/backup?secret=<HEALTH_SECRET>
 // Returns 200 { ok:true } if a backup exists in S3 within the last 25 hours.
