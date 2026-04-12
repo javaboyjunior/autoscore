@@ -290,20 +290,19 @@ export default function JudgeDashboard() {
 
         {!isLoading && loggedInJudge ? (
           <div>
-            <div className="flex justify-between items-center mb-6">
+            <div className="flex flex-col gap-3 mb-6 md:flex-row md:items-center md:justify-between">
               <h2 className="text-2xl font-bold">Cars to Score</h2>
-              <div className="flex items-center gap-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
                 <div className="flex items-center space-x-2">
                   <Switch id="show-unscored" checked={showUnscoredOnly} onCheckedChange={setShowUnscoredOnly} />
                   <Label htmlFor="show-unscored">Show only unscored cars</Label>
                 </div>
-                <div className="w-full max-w-xs">
-                  <Input
-                    placeholder="Search by ID, make, or model..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                </div>
+                <Input
+                  className="w-full md:max-w-xs"
+                  placeholder="Search by ID, make, or model..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
               </div>
             </div>
 
