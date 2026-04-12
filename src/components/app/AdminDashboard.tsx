@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { useCollection, api } from '@/lib/api';
 import {
@@ -28,7 +28,7 @@ import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import {
   PlusCircle, Edit, Users, Car as CarIcon, ListChecks, CheckCircle2,
-  XCircle, Calendar, Star, Loader2, Trophy, Download,
+  XCircle, Calendar, Star, Loader2, Trophy, Download, Upload,
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -43,6 +43,27 @@ type CarScoringDetails = Car & {
   totalJudges: number; scoredJudges: number; isFullyScored: boolean;
   totalScore: number | null; maxScore: number;
 };
+
+// Handles quoted fields and escaped quotes ("") per RFC 4180
+function parseCSVLine(line: string): string[] {
+  const fields: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
+      else { inQuotes = !inQuotes; }
+    } else if (ch === ',' && !inQuotes) {
+      fields.push(current.trim());
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  fields.push(current.trim());
+  return fields;
+}
 
 export default function AdminDashboard() {
   const [searchParams] = useSearchParams();
@@ -225,6 +246,84 @@ export default function AdminDashboard() {
     }
     setJudgeDialogOpen(false);
     setJudgeToEdit(null);
+  };
+
+  const importInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Cars-only CSV export (no scores — for moving cars between events) ─────
+  const handleExportCarsCSV = () => {
+    if (!eventCars?.length) return;
+    const headers = ['Reg ID', 'Owner Info', 'Make', 'Model', 'Year', 'Color'];
+    const rows = eventCars
+      .slice()
+      .sort((a, b) => a.registrationId - b.registrationId)
+      .map((car) =>
+        [car.registrationId, car.ownerInfo, car.make, car.model, car.year, car.color]
+          .map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`)
+      );
+    const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    const name = events?.find((e) => e.id === selectedEventId)?.name || 'cars';
+    link.setAttribute('download', `${name.replace(/\s+/g, '_')}_cars.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // ── Cars CSV import ───────────────────────────────────────────────────────
+  const handleImportCarsCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // reset so the same file can be re-selected
+    if (!file || !selectedEventId) return;
+
+    const text = await file.text();
+    const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+    if (lines.length < 2) {
+      toast({ variant: 'destructive', title: 'Import Failed', description: 'CSV must have a header row and at least one data row.' });
+      return;
+    }
+
+    let imported = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+
+    for (const line of lines.slice(1)) {
+      const [regStr, ownerInfo, make, model, yearStr, color] = parseCSVLine(line);
+      const registrationId = parseInt(regStr, 10);
+      if (isNaN(registrationId) || !make?.trim() || !model?.trim()) { skipped++; continue; }
+
+      const result = await api.postAwait('/api/cars', {
+        eventId: selectedEventId,
+        registrationId,
+        ownerInfo: ownerInfo ?? '',
+        make: make.trim(),
+        model: model.trim(),
+        year: parseInt(yearStr, 10) || 0,
+        color: color ?? '',
+      });
+
+      if (result?.error) {
+        errors.push(`Reg ${registrationId}: ${result.error}`);
+        skipped++;
+      } else {
+        imported++;
+      }
+    }
+
+    if (errors.length) {
+      toast({
+        variant: 'destructive',
+        title: `Import completed with errors`,
+        description: `${imported} imported, ${skipped} skipped. ${errors.slice(0, 3).join('; ')}${errors.length > 3 ? '…' : ''}`,
+      });
+    } else {
+      toast({
+        title: 'Import Successful',
+        description: `${imported} car${imported !== 1 ? 's' : ''} imported${skipped ? `, ${skipped} skipped` : ''}.`,
+      });
+    }
   };
 
   const handleExportToCSV = () => {
@@ -426,10 +525,17 @@ export default function AdminDashboard() {
                 <CardHeader>
                   <div className="flex justify-between items-center">
                     <div><CardTitle>Car Management</CardTitle><CardDescription>Add, edit, or remove cars for this event.</CardDescription></div>
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 flex-wrap justify-end">
                       <div className="w-full max-w-xs">
                         <Input placeholder="Search cars..." value={carSearchQuery} onChange={(e) => setCarSearchQuery(e.target.value)} />
                       </div>
+                      <Button variant="outline" size="sm" onClick={handleExportCarsCSV} disabled={!selectedEventId || !eventCars?.length}>
+                        <Download className="mr-2 h-4 w-4" />Export CSV
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => importInputRef.current?.click()} disabled={!selectedEventId}>
+                        <Upload className="mr-2 h-4 w-4" />Import CSV
+                      </Button>
+                      <input ref={importInputRef} type="file" accept=".csv" className="hidden" onChange={handleImportCarsCSV} />
                       <Dialog open={isCarDialogOpen} onOpenChange={(o) => { setCarDialogOpen(o); if (!o) setCarToEdit(null); }}>
                         <DialogTrigger asChild>
                           <Button disabled={!selectedEventId}><PlusCircle className="mr-2 h-4 w-4" /> Add Car</Button>
