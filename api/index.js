@@ -425,6 +425,45 @@ app.put('/api/scores/:id', writeLimiter, async (req, res) => {
   }
 });
 
+// ── Backup health check ──────────────────────────────────────────────────────
+// GET /api/health/backup?secret=<HEALTH_SECRET>
+// Returns 200 { ok:true } if a backup exists in S3 within the last 25 hours.
+// Clawdbot (or any monitoring tool) can hit this daily.
+app.get('/api/health/backup', (req, res) => {
+  const secret = process.env.HEALTH_SECRET;
+  if (!secret || req.query.secret !== secret) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const bucket = process.env.S3_BUCKET_NAME;
+  const prefix = process.env.S3_PREFIX || 'autoscore/backups';
+  if (!bucket) return res.status(500).json({ ok: false, error: 'S3_BUCKET_NAME not configured' });
+
+  const { exec } = require('child_process');
+  // List objects, sort chronologically, take the most recent line
+  exec(`aws s3 ls "s3://${bucket}/${prefix}/" | sort | tail -1`, (err, stdout) => {
+    if (err) return res.status(500).json({ ok: false, error: err.message });
+
+    const line = stdout.trim();
+    if (!line) return res.status(500).json({ ok: false, error: 'No backups found in S3' });
+
+    // aws s3 ls output: "2026-04-11 03:00:01      123456 autoscore_20260411_030001.sql.gz"
+    const match = line.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/);
+    if (!match) return res.status(500).json({ ok: false, error: 'Cannot parse S3 listing', raw: line });
+
+    const backupTime = new Date(match[1] + ' UTC');
+    const ageHours   = (Date.now() - backupTime.getTime()) / 3_600_000;
+    const ok         = ageHours < 25;
+
+    res.status(ok ? 200 : 500).json({
+      ok,
+      lastBackup: backupTime.toISOString(),
+      ageHours:   Math.round(ageHours * 10) / 10,
+      message:    ok ? 'Backup is current' : `Last backup is ${Math.round(ageHours)}h old — expected < 25h`,
+    });
+  });
+});
+
 // ── SPA fallback — send index.html for all non-API routes ───────────────────
 app.use((req, res) => {
   if (req.path.startsWith('/api/')) {
