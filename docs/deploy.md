@@ -312,7 +312,22 @@ tail -f /home/ubuntu/.pm2/logs/deploy.log
 
 ---
 
-## 22. Set up daily S3 backups
+## 22. Set up PM2 log rotation
+
+Without this, logs grow unbounded and will eventually fill the disk.
+
+```bash
+pm2 install pm2-logrotate
+pm2 set pm2-logrotate:max_size 10M
+pm2 set pm2-logrotate:retain 7
+pm2 set pm2-logrotate:compress true
+```
+
+Logs rotate when they hit 10 MB; 7 compressed copies are kept.
+
+---
+
+## 23. Set up daily S3 backups
 
 **Test manually first:**
 ```bash
@@ -354,4 +369,16 @@ sudo nginx -t && sudo systemctl reload nginx
 
 # Renew SSL
 sudo certbot renew
+
+# Verify SSL auto-renewal timer is active (should show "active")
+sudo systemctl status snap.certbot.renew.timer
+
+# Dry-run renewal to confirm it will work
+sudo certbot renew --dry-run
+
+# Check PM2 log rotation is installed
+pm2 list   # pm2-logrotate should appear
+
+# Ping health endpoint
+curl https://calvaryagkc.app/api/health
 ```

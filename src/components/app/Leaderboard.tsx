@@ -6,18 +6,22 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Loader2, Download, Trophy } from 'lucide-react';
-import { format } from 'date-fns';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { format, parseISO } from 'date-fns';
 
 type Event = { id: string; name: string; date: string; isCurrent?: boolean };
 type Car = { id: string; eventId: string; registrationId: number; ownerInfo: string; make: string; model: string; year: number; color: string };
 type Judge = { id: string; eventId: string; name: string; email: string };
 type Score = { id: string; carId: string; judgeId: string; eventId: string; score: number | null; notes: string };
-type LeaderboardCar = Car & { rank: number; totalScore: number };
+type LeaderboardCar = Car & { rank: number; totalScore: number; scoredCount: number; isComplete: boolean };
 
 export default function Leaderboard() {
   const [searchParams] = useSearchParams();
   const [selectedEventId, setSelectedEventId] = useState('');
   const [isExporting, setIsExporting] = useState(false);
+  const [showAll, setShowAll] = useState(false);
 
   const { data: events, isLoading: isLoadingEvents } = useCollection<Event>(
     '/api/events',
@@ -57,21 +61,24 @@ export default function Leaderboard() {
     const totalJudges = eventJudges?.length || 0;
     if (!eventCars || totalJudges === 0) return [];
 
-    const fullyScoredCars = eventCars
+    const scored = eventCars
       .map((car) => {
         const carScores = eventScores?.filter((s) => s.carId === car.id && s.score !== null) || [];
-        if (new Set(carScores.map((s) => s.judgeId)).size < totalJudges) return null;
-        return { ...car, totalScore: carScores.reduce((acc, s) => acc + (s.score || 0), 0) };
+        const scoredCount = new Set(carScores.map((s) => s.judgeId)).size;
+        const isComplete = scoredCount === totalJudges;
+        if (!showAll && !isComplete) return null;
+        if (scoredCount === 0) return null; // never show unseen cars
+        return { ...car, totalScore: carScores.reduce((acc, s) => acc + (s.score || 0), 0), scoredCount, isComplete };
       })
       .filter((c): c is NonNullable<typeof c> => c !== null)
       .sort((a, b) => b.totalScore - a.totalScore);
 
     let rank = 1;
-    return fullyScoredCars.map((car, i) => {
-      if (i > 0 && fullyScoredCars[i - 1].totalScore > car.totalScore) rank = i + 1;
+    return scored.map((car, i) => {
+      if (i > 0 && scored[i - 1].totalScore > car.totalScore) rank = i + 1;
       return { ...car, rank };
     });
-  }, [eventCars, eventJudges, eventScores]);
+  }, [eventCars, eventJudges, eventScores, showAll]);
 
   const isLoading = isLoadingEvents || isLoadingCars || isLoadingJudges || isLoadingScores;
   const selectedEvent = events?.find((e) => e.id === selectedEventId);
@@ -126,14 +133,20 @@ export default function Leaderboard() {
                     <Trophy className="h-6 w-6 text-accent" />
                     <CardTitle className="text-2xl">Leaderboard</CardTitle>
                   </div>
-                  <Button onClick={handleExportToCSV} variant="outline" disabled={isExporting}>
-                    {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-                    Export to CSV
-                  </Button>
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      <Switch id="show-all" checked={showAll} onCheckedChange={setShowAll} />
+                      <Label htmlFor="show-all" className="text-sm text-muted-foreground cursor-pointer">Show partial</Label>
+                    </div>
+                    <Button onClick={handleExportToCSV} variant="outline" disabled={isExporting}>
+                      {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                      Export to CSV
+                    </Button>
+                  </div>
                 </div>
                 {selectedEvent && (
                   <CardDescription>
-                    Showing results for {selectedEvent.name} on {format(new Date(selectedEvent.date), 'PPP')}
+                    Showing results for {selectedEvent.name} on {format(parseISO(selectedEvent.date), 'PPP')}
                   </CardDescription>
                 )}
               </div>
@@ -151,13 +164,20 @@ export default function Leaderboard() {
                   </TableHeader>
                   <TableBody>
                     {leaderboardData.map((car) => (
-                      <TableRow key={car.id}>
-                        <TableCell className="text-center font-bold text-lg">{car.rank}</TableCell>
+                      <TableRow key={car.id} className={!car.isComplete ? 'opacity-60' : ''}>
+                        <TableCell className="text-center font-bold text-lg">
+                          {car.isComplete ? car.rank : '–'}
+                        </TableCell>
                         <TableCell>{car.registrationId}</TableCell>
                         <TableCell>{car.year}</TableCell>
                         <TableCell>{car.make} {car.model}</TableCell>
                         <TableCell>{car.ownerInfo}</TableCell>
-                        <TableCell className="text-right font-medium">{car.totalScore.toFixed(1)}</TableCell>
+                        <TableCell className="text-right font-medium">
+                          {car.totalScore.toFixed(1)}
+                          {!car.isComplete && (
+                            <Badge variant="secondary" className="ml-2 text-xs">{car.scoredCount}/{eventJudges?.length}</Badge>
+                          )}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

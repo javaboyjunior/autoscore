@@ -470,6 +470,12 @@ app.get('/api/admin/verify', (req, res) => {
   res.status(401).json({ ok: false });
 });
 
+// ── Basic health ping ────────────────────────────────────────────────────────
+// GET /api/health — for uptime monitors (UptimeRobot etc.)
+app.get('/api/health', (_req, res) => {
+  res.json({ ok: true, timestamp: new Date().toISOString() });
+});
+
 // ── Backup health check ──────────────────────────────────────────────────────
 // GET /api/health/backup?secret=<HEALTH_SECRET>
 // Returns 200 { ok:true } if a backup exists in S3 within the last 25 hours.
@@ -520,9 +526,21 @@ app.use((req, res) => {
 // ── Start ────────────────────────────────────────────────────────────────────
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
-  app.listen(PORT, async () => {
+  const server = app.listen(PORT, async () => {
     console.log(`http://localhost:${PORT}`);
     await startNotifyListener();
+  });
+
+  // Graceful shutdown — PM2 sends SIGTERM before killing the process.
+  // Finish in-flight requests, close the DB pool, then exit cleanly.
+  process.on('SIGTERM', () => {
+    console.log('[shutdown] SIGTERM received — draining connections');
+    server.close(() => {
+      pool.end().then(() => {
+        console.log('[shutdown] Clean exit');
+        process.exit(0);
+      });
+    });
   });
 }
 

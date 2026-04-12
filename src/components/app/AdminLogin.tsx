@@ -60,7 +60,16 @@ export default function AdminLogin() {
   }
 
   if (status === 'authed') {
-    return <AdminDashboard />;
+    return (
+      <AdminDashboard
+        onLogout={() => {
+          sessionStorage.removeItem(TOKEN_KEY);
+          setStatus('login');
+          setUsername('');
+          setPassword('');
+        }}
+      />
+    );
   }
 
   return (

@@ -28,9 +28,9 @@ import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import {
   PlusCircle, Edit, Users, Car as CarIcon, ListChecks, CheckCircle2,
-  XCircle, Calendar, Star, Loader2, Trophy, Download, Upload,
+  XCircle, Calendar, Star, Loader2, Trophy, Download, Upload, LogOut,
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 
 type Event = { id: string; name: string; date: string; isCurrent?: boolean };
 type Car = {
@@ -65,7 +65,7 @@ function parseCSVLine(line: string): string[] {
   return fields;
 }
 
-export default function AdminDashboard() {
+export default function AdminDashboard({ onLogout }: { onLogout?: () => void }) {
   const [searchParams] = useSearchParams();
   const [selectedEventId, setSelectedEventId] = useState<string>('');
   const [carToEdit, setCarToEdit] = useState<Car | null>(null);
@@ -369,6 +369,11 @@ export default function AdminDashboard() {
               </SelectContent>
             </Select>
           )}
+          {onLogout && (
+            <Button variant="ghost" size="sm" onClick={onLogout} className="text-muted-foreground">
+              <LogOut className="h-4 w-4 mr-1" />Sign out
+            </Button>
+          )}
         </div>
       </header>
 
@@ -482,7 +487,7 @@ export default function AdminDashboard() {
                       {sortedEvents.map((ev) => (
                         <TableRow key={ev.id}>
                           <TableCell>{ev.name}</TableCell>
-                          <TableCell>{format(new Date(ev.date), 'PPP')}</TableCell>
+                          <TableCell>{format(parseISO(ev.date), 'PPP')}</TableCell>
                           <TableCell className="text-center">
                             {ev.isCurrent && <Badge><Star className="mr-1 h-3 w-3" />Current</Badge>}
                           </TableCell>
