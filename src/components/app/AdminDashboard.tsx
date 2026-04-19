@@ -652,10 +652,21 @@ export default function AdminDashboard({ onLogout }: { onLogout?: () => void }) 
                             <Button variant="ghost" size="icon" onClick={() => { setCarToEdit(car); setCarDialogOpen(true); }}>
                               <Edit className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" className="text-destructive"
-                              onClick={() => api.delete(`/api/cars/${car.id}`)}>
-                              <XCircle className="h-4 w-4" />
-                            </Button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="ghost" size="icon" className="text-destructive"><XCircle className="h-4 w-4" /></Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Delete {car.make} {car.model}?</AlertDialogTitle>
+                                  <AlertDialogDescription>This will permanently remove Reg. ID {car.registrationId} and all its scores.</AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => api.delete(`/api/cars/${car.id}`)}>Delete</AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -708,10 +719,21 @@ export default function AdminDashboard({ onLogout }: { onLogout?: () => void }) 
                             <Button variant="ghost" size="icon" onClick={() => { setJudgeToEdit(judge); setJudgeDialogOpen(true); }}>
                               <Edit className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" className="text-destructive"
-                              onClick={() => api.delete(`/api/judges/${judge.id}`)}>
-                              <XCircle className="h-4 w-4" />
-                            </Button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="ghost" size="icon" className="text-destructive"><XCircle className="h-4 w-4" /></Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Delete {judge.name}?</AlertDialogTitle>
+                                  <AlertDialogDescription>This will permanently remove {judge.name} and all their scores.</AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => api.delete(`/api/judges/${judge.id}`)}>Delete</AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
                           </TableCell>
                         </TableRow>
                       ))}
