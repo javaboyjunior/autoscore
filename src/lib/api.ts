@@ -81,6 +81,7 @@ interface UseCollectionOptions {
 interface UseCollectionResult<T> {
   data: T[] | null;
   isLoading: boolean;
+  refresh: () => void;
 }
 
 export function useCollection<T>(
@@ -150,7 +151,7 @@ export function useCollection<T>(
     return () => sseClient.removeEventListener('change', handler);
   }, [fetchData, watchTablesKey, watchEventId]);
 
-  return { data, isLoading };
+  return { data, isLoading, refresh: fetchData };
 }
 
 // ---------------------------------------------------------------------------

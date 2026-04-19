@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useCollection, api } from '@/lib/api';
 import {
@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { ScoringDialog } from './ScoringDialog';
-import { CheckCircle2, LogOut, Star, Loader2, WifiOff, Lock } from 'lucide-react';
+import { CheckCircle2, LogOut, Star, Loader2, WifiOff, Lock, RefreshCw } from 'lucide-react';
 
 // ── Offline queue helpers ─────────────────────────────────────────────────────
 const QUEUE_KEY = 'autoscore_offline_queue';
@@ -36,39 +36,90 @@ export default function JudgeDashboard() {
   const [loggedInJudge, setLoggedInJudge] = useState<Judge | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showUnscoredOnly, setShowUnscoredOnly] = useState(false);
+  const [sortBy, setSortBy] = useState<'registrationId' | 'make' | 'model' | 'owner'>('registrationId');
   const [selectedEventId, setSelectedEventId] = useState('');
   const [selectedJudgeId, setSelectedJudgeId] = useState('');
   const [isLoginDialogOpen, setLoginDialogOpen] = useState(false);
   const [scoringCar, setScoringCar] = useState<CarWithScore | null>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
+  const pullStartY = useRef(0);
+  const pullDistanceRef = useRef(0);
+  const isRefreshingRef = useRef(false);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const PULL_THRESHOLD = 72;
   const { toast } = useToast();
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [offlineQueue, setOfflineQueue] = useState<QueuedScore[]>(loadQueue);
 
   // ── Data fetching ─────────────────────────────────────────────────────────
-  const { data: events, isLoading: isLoadingEvents } = useCollection<Event>(
+  const { data: events, isLoading: isLoadingEvents, refresh: refreshEvents } = useCollection<Event>(
     '/api/events',
     { watchTables: ['events'] },
   );
 
   const currentEvent = useMemo(() => events?.find((e) => e.isCurrent), [events]);
 
-  const { data: eventJudges, isLoading: isLoadingJudges } = useCollection<Judge>(
+  const { data: eventJudges, isLoading: isLoadingJudges, refresh: refreshJudges } = useCollection<Judge>(
     selectedEventId ? `/api/judges?eventId=${selectedEventId}` : null,
     { watchTables: ['judges'], watchEventId: selectedEventId },
   );
 
-  const { data: eventCars, isLoading: isLoadingCars } = useCollection<Car>(
+  const { data: eventCars, isLoading: isLoadingCars, refresh: refreshCars } = useCollection<Car>(
     selectedEventId ? `/api/cars?eventId=${selectedEventId}` : null,
     { watchTables: ['cars'], watchEventId: selectedEventId },
   );
 
-  const { data: judgeScores, isLoading: isLoadingScores } = useCollection<Score>(
+  const { data: judgeScores, isLoading: isLoadingScores, refresh: refreshScores } = useCollection<Score>(
     loggedInJudge && selectedEventId
       ? `/api/scores?eventId=${selectedEventId}&judgeId=${loggedInJudge.id}`
       : null,
     { watchTables: ['scores'], watchEventId: selectedEventId },
   );
+
+  // ── Pull-to-refresh ───────────────────────────────────────────────────────
+  const handleRefreshAll = useCallback(() => {
+    if (isRefreshingRef.current) return;
+    isRefreshingRef.current = true;
+    setIsRefreshing(true);
+    refreshEvents();
+    if (selectedEventId) {
+      refreshJudges();
+      refreshCars();
+      if (loggedInJudge) refreshScores();
+    }
+    setTimeout(() => {
+      isRefreshingRef.current = false;
+      setIsRefreshing(false);
+    }, 800);
+  }, [refreshEvents, refreshJudges, refreshCars, refreshScores, selectedEventId, loggedInJudge]);
+
+  useEffect(() => {
+    const onStart = (e: TouchEvent) => {
+      pullStartY.current = window.scrollY === 0 ? e.touches[0].clientY : 0;
+    };
+    const onMove = (e: TouchEvent) => {
+      if (!pullStartY.current) return;
+      const dist = e.touches[0].clientY - pullStartY.current;
+      const clamped = dist > 0 ? Math.min(dist, 110) : 0;
+      pullDistanceRef.current = clamped;
+      setPullDistance(clamped);
+    };
+    const onEnd = () => {
+      if (pullDistanceRef.current >= PULL_THRESHOLD) handleRefreshAll();
+      pullDistanceRef.current = 0;
+      setPullDistance(0);
+      pullStartY.current = 0;
+    };
+    document.addEventListener('touchstart', onStart, { passive: true });
+    document.addEventListener('touchmove', onMove, { passive: true });
+    document.addEventListener('touchend', onEnd, { passive: true });
+    return () => {
+      document.removeEventListener('touchstart', onStart);
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend', onEnd);
+    };
+  }, [handleRefreshAll]);
 
   // ── Auto-select current event ─────────────────────────────────────────────
   useEffect(() => {
@@ -121,19 +172,28 @@ export default function JudgeDashboard() {
   const carsForScoring: CarWithScore[] = useMemo(() => {
     if (!loggedInJudge || !eventCars) return [];
     let cars = eventCars
-      .map((car) => ({ ...car, score: judgeScores?.find((s) => s.carId === car.id) }))
-      .sort((a, b) => a.registrationId - b.registrationId);
+      .map((car) => ({ ...car, score: judgeScores?.find((s) => s.carId === car.id) }));
+
     if (showUnscoredOnly) cars = cars.filter((c) => !c.score);
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       cars = cars.filter((c) =>
         String(c.registrationId).includes(q) ||
         c.make.toLowerCase().includes(q) ||
-        c.model.toLowerCase().includes(q),
+        c.model.toLowerCase().includes(q) ||
+        c.ownerInfo.toLowerCase().includes(q),
       );
     }
+
+    cars.sort((a, b) => {
+      if (sortBy === 'registrationId') return a.registrationId - b.registrationId;
+      if (sortBy === 'make') return a.make.localeCompare(b.make);
+      if (sortBy === 'model') return a.model.localeCompare(b.model);
+      return a.ownerInfo.localeCompare(b.ownerInfo);
+    });
+
     return cars;
-  }, [loggedInJudge, eventCars, judgeScores, searchQuery, showUnscoredOnly]);
+  }, [loggedInJudge, eventCars, judgeScores, searchQuery, showUnscoredOnly, sortBy]);
 
   // ── Handlers ─────────────────────────────────────────────────────────────
   const handleLoginAttempt = () => {
@@ -290,6 +350,16 @@ export default function JudgeDashboard() {
       </header>
 
       <main className="p-4 md:p-6">
+        {/* Pull-to-refresh indicator */}
+        <div
+          className="flex justify-center items-center overflow-hidden transition-[height] duration-200"
+          style={{ height: isRefreshing ? 44 : Math.min(pullDistance * 0.5, 44) }}
+        >
+          <RefreshCw
+            className={`h-5 w-5 transition-colors duration-150 ${pullDistance >= PULL_THRESHOLD || isRefreshing ? 'text-primary' : 'text-muted-foreground'} ${isRefreshing ? 'animate-spin' : ''}`}
+            style={!isRefreshing ? { transform: `rotate(${Math.min(pullDistance * 3, 360)}deg)` } : undefined}
+          />
+        </div>
         {isLoading && (
           <div className="flex justify-center items-center h-64">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -313,9 +383,21 @@ export default function JudgeDashboard() {
                   <Switch id="show-unscored" checked={showUnscoredOnly} onCheckedChange={setShowUnscoredOnly} />
                   <Label htmlFor="show-unscored">Show only unscored cars</Label>
                 </div>
+                <div className="flex items-center gap-2">
+                  <Label className="shrink-0 text-sm text-muted-foreground">Sort by</Label>
+                  <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
+                    <SelectTrigger className="w-full md:w-[160px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="registrationId">Registration ID</SelectItem>
+                      <SelectItem value="make">Make</SelectItem>
+                      <SelectItem value="model">Model</SelectItem>
+                      <SelectItem value="owner">Owner</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 <Input
                   className="w-full md:max-w-xs"
-                  placeholder="Search by ID, make, or model..."
+                  placeholder="Search by ID, make, model, or owner..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
@@ -340,6 +422,7 @@ export default function JudgeDashboard() {
                       </div>
                     </CardHeader>
                     <CardContent className="flex-grow">
+                      <p className="text-sm"><strong>Owner:</strong> {car.ownerInfo}</p>
                       <p className="text-sm"><strong>Color:</strong> {car.color}</p>
                       {car.score && (
                         <div className="mt-4 p-3 bg-muted rounded-lg">
