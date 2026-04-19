@@ -29,6 +29,7 @@ import { useToast } from '@/hooks/use-toast';
 import {
   PlusCircle, Edit, Users, Car as CarIcon, ListChecks, CheckCircle2,
   XCircle, Calendar, Star, Loader2, Trophy, Download, Upload, LogOut, Lock, LockOpen,
+  ArrowUp, ArrowDown, ArrowUpDown,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 
@@ -77,6 +78,8 @@ export default function AdminDashboard({ onLogout }: { onLogout?: () => void }) 
   const [selectedCarForDetails, setSelectedCarForDetails] = useState<CarScoringDetails | null>(null);
   const [showIncompleteOnly, setShowIncompleteOnly] = useState(false);
   const [carSearchQuery, setCarSearchQuery] = useState('');
+  const [carSortField, setCarSortField] = useState<'registrationId' | 'year' | 'make' | 'color' | 'owner'>('registrationId');
+  const [carSortDir, setCarSortDir] = useState<'asc' | 'desc'>('asc');
   const { toast } = useToast();
 
   // ── Data fetching (replaces Firebase onSnapshot) ─────────────────────────
@@ -119,9 +122,14 @@ export default function AdminDashboard({ onLogout }: { onLogout?: () => void }) 
     [events],
   );
 
+  const handleCarSort = (field: typeof carSortField) => {
+    if (carSortField === field) setCarSortDir((d) => d === 'asc' ? 'desc' : 'asc');
+    else { setCarSortField(field); setCarSortDir('asc'); }
+  };
+
   const filteredEventCars = useMemo(() => {
     if (!eventCars) return [];
-    let cars = [...eventCars].sort((a, b) => a.registrationId - b.registrationId);
+    let cars = [...eventCars];
     if (carSearchQuery) {
       const q = carSearchQuery.toLowerCase();
       cars = cars.filter((c) =>
@@ -130,8 +138,17 @@ export default function AdminDashboard({ onLogout }: { onLogout?: () => void }) 
         c.ownerInfo.toLowerCase().includes(q) || c.color.toLowerCase().includes(q),
       );
     }
+    cars.sort((a, b) => {
+      let cmp = 0;
+      if (carSortField === 'registrationId') cmp = a.registrationId - b.registrationId;
+      else if (carSortField === 'year') cmp = a.year - b.year;
+      else if (carSortField === 'make') cmp = `${a.make} ${a.model}`.localeCompare(`${b.make} ${b.model}`);
+      else if (carSortField === 'color') cmp = a.color.localeCompare(b.color);
+      else cmp = a.ownerInfo.localeCompare(b.ownerInfo);
+      return carSortDir === 'asc' ? cmp : -cmp;
+    });
     return cars;
-  }, [eventCars, carSearchQuery]);
+  }, [eventCars, carSearchQuery, carSortField, carSortDir]);
 
   const scoringStatus: CarScoringDetails[] = useMemo(() => {
     const totalJudges = eventJudges?.length || 0;
@@ -596,8 +613,31 @@ export default function AdminDashboard({ onLogout }: { onLogout?: () => void }) 
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Reg. ID</TableHead><TableHead>Year</TableHead><TableHead>Make & Model</TableHead>
-                        <TableHead>Color</TableHead><TableHead>Owner</TableHead><TableHead className="text-right">Actions</TableHead>
+                        {(
+                          [
+                            { field: 'registrationId', label: 'Reg. ID' },
+                            { field: 'year',           label: 'Year' },
+                            { field: 'make',           label: 'Make & Model' },
+                            { field: 'color',          label: 'Color' },
+                            { field: 'owner',          label: 'Owner' },
+                          ] as const
+                        ).map(({ field, label }) => (
+                          <TableHead
+                            key={field}
+                            className="cursor-pointer select-none hover:bg-muted/50"
+                            onClick={() => handleCarSort(field)}
+                          >
+                            <div className="flex items-center gap-1">
+                              {label}
+                              {carSortField === field
+                                ? carSortDir === 'asc'
+                                  ? <ArrowUp className="h-3 w-3" />
+                                  : <ArrowDown className="h-3 w-3" />
+                                : <ArrowUpDown className="h-3 w-3 opacity-40" />}
+                            </div>
+                          </TableHead>
+                        ))}
+                        <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
